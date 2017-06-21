@@ -1,0 +1,112 @@
+#!/bin/bash
+# Mel - 2017-06-20 - monitor OpenAS2 for icinga
+
+# as2 startup script
+as2script=/opt/OpenAS2_20100816/bin/start-openas2
+# as2 logs directory
+as2logs=/opt/OpenAS2_20100816/config
+
+version="2017-06-20"
+
+if [[ "${BASH_VERSINFO[0]}" -lt 4 ]];then
+    echo "Requires bash version >= 4"
+    exit 1
+fi
+
+exitstatus=0
+# se defaults, parse from arguments will override
+logwarnhr=1
+logwarnmin=0
+logcrithr=1
+logcritmin=0
+perhrwarn=1200
+perhrcrit=1800
+
+# check for script running
+if [[ -f $as2script ]];then
+    if [[ -z $(pidof -x $as2script) ]];then
+        exitstatus=2
+        critstring="AS2 process is not running"
+    fi
+else
+    exitstatus=2
+    critstring="Missing AS2 program: $as2script"
+fi
+# read logs for last hour perfdata
+if [[ -d $as2logs ]];then
+    lognow="$(ls -tr $as2logs/log-*.txt|tail -1)"
+    logprev="$(ls -tr $as2logs/log-*.txt|tail -2|head -1)"
+    logtemp=/tmp/as2log.$$
+    minute="$(date +%M)"
+    minuteones="${minute:1:1}"
+    minutetens="${minute:0:1}"
+    lasthour="$(date -d now-1hour +%H)"
+    thishour="$(date +%H)"
+    x=$minuteones
+    while [[ $x < 9 ]];do
+        ((x++))
+        minuteones="${minuteones}${x}"
+    done
+    [[ ${#minuteones} -eq 1 ]] || minuteones="[$minuteones]"
+    grepfor="$minutetens$minuteones"
+    
+    x=$minutetens
+    if [[ $x < 5 ]];then
+        while [[ $x < 5 ]];do
+            ((x++))
+            [[ -z $nexttensminute ]] && nexttensminute=$x || nexttensminute="$nexttensminute$x"
+        done
+        [[ ${#nexttensminute} -eq 1 ]] || nexttensminute="[$nexttensminute]"
+        grepfor="$lasthour:($grepfor|$nexttensminute[0-9]):"
+    fi
+    grepfor="$grepfor|$thishour:[0-5][0-9]:"
+    # create a file that only has the last hour of logs
+    if [[ $lasthour == "23" ]];then
+        egrep -A999999 "$grepfor" $logprev >$logtemp
+        cat $lognow >>$logtemp
+    else
+        egrep -A999999 "$grepfor" $lognow >$logtemp
+    fi
+    inbounds="$(egrep 'received [0-9]+ bytes' $logtemp|wc -l)"
+    outbounds="$(egrep 'transferred [0-9]+ bytes' $logtemp|wc -l)"
+    totaltraffic=$((inbounds+outbounds))
+    if [[ $totaltraffic -gt $perhrcrit ]];then
+        exitstatus=2
+        [[ -z $critstring ]] && critstring="greater than $perhrcrit traffic per hour" || critstring="$critstring, greater than $perhrcrit traffic per hour"
+    elif [[ $totaltraffic -gt $perhrwarn ]];then
+        [[ $exitstatus -lt 1 ]] && exitstatus=1
+        [[ -z $warnstring ]] && warnstring="greater than $perhrwarn traffic per hour" || warnstring="$warnstring, greater than $perhrwarn traffic per hour"
+    fi
+    # check if last log entry is too old
+    logdatetm="$(date -r $lognow +%Y%m%d%H%M)"
+    warndatetm="$(date -d now-${logwarnhr}hours${logwarnmin}min +%Y%m%d%H%M)"
+    critdatetm="$(date -d now-${logcrithr}hours${logcritmin}min +%Y%m%d%H%M)"
+    if [[ $critdatetm -gt $logdatetm ]];then
+        exitstatus=2
+        crithrmsg="log is over $([[ $logcrithr -gt 0 ]] && echo $logcrithr hrs)$([[ $logcritmin -gt 0 ]] && echo $logcritmin mins) old"
+        [[ -z $critstring ]] && critstring="$crithrmsg" || critstring="$critstring, $crithrmsg"
+    elif [[ $warndatetm -gt $logdatetm ]];then
+        [[ $exitstatus -lt 1 ]] && exitstatus=1
+        warnhrmsg="log is over $([[ $logwarnhr -gt 0 ]] && echo "$logwarnhr hrs ")$([[ $logwarnmin -gt 0 ]] && echo "$logwarnmin mins")"
+        [[ -z $warnstring ]] && warnstring="$warnhrmsg" || warnstring="$warnstring, $warnhrmsg"
+    fi
+else
+    exitstatus=2
+    [[ -z $critstring ]] && critstring="Missing directory: $as2logs" || critstring="$critstring, Missing directory: $as2logs"
+fi
+
+[[ -z $critstring ]] || critstring="CRIT: $critstring"
+[[ -z $warnstring ]] || warnstring="WARN: $warnstring"
+[[ -z $critstring ]] || exitstring="$critstring"
+[[ -z $warnstring ]] || exitstring="$exitstring $warnstring"
+perfdata=";| Inbound=$inbounds;$perhrwarn;$perhrcrit;0 Outbound=$outbounds;$perhrwarn;$perhrcrit;0 Total=$totaltraffic;$perhrwarn;$perhrcrit;0"
+exitstring="$exitstring$perfdata" 
+case $exitstatus in
+    0)  echo "OK: $exitstring";;
+    1)  echo "WARNING: $exitstring";;
+    2)  echo "CRITICAL: $exitstring";;
+    *)  echo "UNKNOWN: $exitstring";;
+esac
+[[ -f $logtemp ]] && /bin/rm -f $logtemp
+exit $exitstatus
+
