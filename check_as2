@@ -1,4 +1,5 @@
 #!/bin/bash
+# this file: /usr/lib64/nagios/plugins/check_as2
 # Mel - 2017-06-13 - monitor OpenAS2 for icinga
 # Mel - 2017-06-23 - add ability to use a different startup script
 
