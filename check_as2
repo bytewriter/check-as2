@@ -1,10 +1,6 @@
 #!/bin/bash
-# Mel - 2017-06-20 - monitor OpenAS2 for icinga
-
-# as2 startup script
-as2script=/opt/OpenAS2_20100816/bin/start-openas2
-# as2 logs directory
-as2logs=/opt/OpenAS2_20100816/config
+# Mel - 2017-06-13 - monitor OpenAS2 for icinga
+# Mel - 2017-06-23 - add ability to use a different startup script
 
 version="2017-06-20"
 
@@ -13,14 +9,70 @@ if [[ "${BASH_VERSINFO[0]}" -lt 4 ]];then
     exit 1
 fi
 
+showver(){
+    echo "$(basename $0) version $version"
+}
+
+usage(){
+    showver
+    cat << MEL
+Usage:
+  $(basename $0) [OPTION]... [OPTION]...
+
+Options:
+  -c INTEGER, --perhourcrit INTEGER, critical thresehold for per hour traffic
+     defaults to $perhrcrit if not set.
+  -w INTEGER, --perhourwarn INTEGER, warning thresehold for per hour traffic
+     defaults to $perhrwarn if not set.
+  -l PATH, --logdir PATH, set the path to the AS2 log files -- defaults to
+     $as2logs if not set.
+  -s SCRIPT, --as2script SCRIPT, set the as2script to look for in process list
+     defaults to $as2script if not set.
+  -h, --help  Show this help message.
+  -V --version Show version information.
+MEL
+}
+
 exitstatus=0
-# se defaults, parse from arguments will override
+# set defaults, parse from arguments will override
 logwarnhr=1
 logwarnmin=0
 logcrithr=1
 logcritmin=0
 perhrwarn=1200
 perhrcrit=1800
+# as2 startup script
+as2script=/opt/OpenAS2_20100816/bin/start-openas2
+# as2 logs directory
+as2logs=/opt/OpenAS2_20100816/config
+
+while getopts ":c:w:l:s:-:hV" opt;do
+    case $opt in
+        w) perhrwarn=$OPTARG ;;
+        c) perhrcrit=$OPTARG ;;
+        h) usage;exit ;;
+        l) as2logs=$OPTARG ;;
+        s) as2script=$OPTARG ;;
+        V)  showver;exit ;;
+        -)
+            case $OPTARG in
+                help)           usage;exit ;;
+                version)        showver;exit ;;
+                perhourwarn)    perhrwarn=${!OPTIND};shift $OPTIND;OPTIND=1;;
+                perhourwarn=*)  perhrwarn=${OPTARG##*=};;
+                perhourcrit)    perhrcrit=${!OPTIND};shift $OPTIND;OPTIND=1;;
+                perhourcrit=*)  perhrcrit=${OPTARG##*=};;
+                logdir)         as2logs=${!OPTIND};shift $OPTIND;OPTIND=1;;
+                logdir=*)       as2logs=${OPTARG##*=};;
+                as2script)      as2script=${!OPTIND};shift $OPTIND;OPTIND=1;;
+                as2script=*)    as2script=${OPTARG##*=};;
+                *)  echo "Invalid long argument: --$OPTARG";usage;exit 1;;
+            esac ;;
+        \?) echo "Invalid short argument: -$OPTARG";usage;exit 1 ;;
+        :)  echo "Argument -$OPTARG missing required value";usage;exit 1 ;;
+        *)  echo "Not sure how I got here: \"-$opt $OPTARG\"";usage;exit 1 ;;
+    esac
+done
 
 # check for script running
 if [[ -f $as2script ]];then
