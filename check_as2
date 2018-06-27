@@ -3,6 +3,7 @@
 # Mel - 2017-06-13 - monitor OpenAS2 for icinga
 # Mel - 2017-06-23 - add ability to use a different startup script
 # Mel - 2018-06-26 - fix grep error
+# Mel - 2018-06-27 - fix midnight error, after midnight if no transactions, log file for today may not exist yet
 
 version="2017-06-20"
 
@@ -86,10 +87,14 @@ else
     exitstatus=2
     critstring="Missing AS2 program: $as2script"
 fi
+# logs look like as2-YYYYMMDD.log because I have changed the logger FileLogger in config.xml to filename="%home%/as2-$date.yyyyMMdd$.log"/>
 # read last hour of logs for perfdata
 if [[ -d $as2logs ]];then
-    lognow="$(ls -tr $as2logs/as2-*.log|tail -1)"
-    logprev="$(ls -tr $as2logs/as2-*.log|tail -2|head -1)"
+    # right after midnight log for today might not exist yet
+    #lognow="$(ls -tr $as2logs/as2-*.log|tail -1)"
+    lognow="$as2logs/as2-$(date +%Y%m%d).log"
+    #logprev="$(ls -tr $as2logs/as2-*.log|tail -2|head -1)"
+    logprev="$as2logs/as2-$(date -d now-1hour +%Y%m%d).log"
     logtemp=/tmp/as2log.$$
     minute="$(date +%M)"
     minuteones="${minute:1:1}"
@@ -100,7 +105,8 @@ if [[ -d $as2logs ]];then
     # grepfor is for the previous hour
     grepfor="$minutetens$minuteones"
     
-    # if tens of minutes is not 5, we will need more than $prevhour:5[$minute-9]
+    # if tens of minutes is not 5, we will need more than $prevhour:5[$minute-9] (because 60 minutes)
+    # example: for time= 04:23:xx, grepfor="03:(2[3-9]|[345][0-9]):"
     x=$minutetens
     if [[ $x < 5 ]];then
         while [[ $x < 5 ]];do
@@ -113,12 +119,13 @@ if [[ -d $as2logs ]];then
         grepfor=" $lasthour:$grepfor"
     fi
     # create a temp file that only has the last hour of logs
+    touch $logtemp
     if [[ $lasthour == "23" ]];then
-        egrep -A999999 "$grepfor" $logprev >$logtemp
-        cat $lognow >>$logtemp
+        [[ -f $logprev ]] && egrep -A999999 "$grepfor" $logprev >$logtemp
+        [[ -f $lognow ]] && cat $lognow >>$logtemp
     else
         grepfor="$grepfor| $thishour:[0-5][0-9]:"
-        egrep -A999999 "$grepfor" $lognow >$logtemp
+        [[ -f $lognow ]] && egrep -A999999 "$grepfor" $lognow >$logtemp
     fi
     inbounds="$(egrep 'received [0-9]+ bytes' $logtemp|wc -l)"
     outbounds="$(egrep 'transferred [0-9]+ bytes' $logtemp|wc -l)"
