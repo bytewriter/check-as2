@@ -4,6 +4,7 @@
 # Mel - 2017-06-23 - add ability to use a different startup script
 # Mel - 2018-06-26 - fix grep error
 # Mel - 2018-06-27 - fix midnight error, after midnight if no transactions, log file for today may not exist yet
+# Mel - 2018-07-02 - log too old check
 
 version="2017-06-20"
 
@@ -91,7 +92,7 @@ fi
 # read last hour of logs for perfdata
 if [[ -d $as2logs ]];then
     # right after midnight log for today might not exist yet
-    #lognow="$(ls -tr $as2logs/as2-*.log|tail -1)"
+    loglast="$(ls -tr $as2logs/as2-*.log|tail -1)"
     lognow="$as2logs/as2-$(date +%Y%m%d).log"
     #logprev="$(ls -tr $as2logs/as2-*.log|tail -2|head -1)"
     logprev="$as2logs/as2-$(date -d now-1hour +%Y%m%d).log"
@@ -138,7 +139,7 @@ if [[ -d $as2logs ]];then
         [[ -z $warnstring ]] && warnstring="greater than $perhrwarn traffic per hour" || warnstring="$warnstring, greater than $perhrwarn traffic per hour"
     fi
     # check if last log entry is too old
-    logdatetm="$(date -r $lognow +%Y%m%d%H%M)"
+    logdatetm="$(date -r $loglast +%Y%m%d%H%M)"
     warndatetm="$(date -d now-${logwarnhr}hours${logwarnmin}min +%Y%m%d%H%M)"
     critdatetm="$(date -d now-${logcrithr}hours${logcritmin}min +%Y%m%d%H%M)"
     if [[ $critdatetm -gt $logdatetm ]];then
